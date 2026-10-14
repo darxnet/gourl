@@ -1,0 +1,56 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      id-token: write # for the Codecov upload in the coverage job
+
+  release:
+    name: Release
+    needs: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install svu
+        run: go install github.com/caarlos0/svu/v2@latest
+
+      # Releases start after v0.1.0 is tagged by hand; until then every
+      # merge to main is just verified.
+      - name: Create Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "$(svu current)" = "v0.0.0" ]; then
+            echo "No release tag yet, skipping release."
+            exit 0
+          fi
+          NEXT=$(svu next)
+          if [ "$(svu current)" == "$NEXT" ]; then
+            echo "Version $NEXT already exists, skipping release."
+          else
+            echo "Releasing $NEXT..."
+            gh release create "$NEXT" --generate-notes
+          fi

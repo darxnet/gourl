@@ -1,0 +1,6 @@
+version: "2"
+
+# Benchmarks only: the same cases repeated per library, and a replace
+# directive to benchmark the checkout.
+linters:
+  default: standard

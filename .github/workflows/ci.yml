@@ -1,0 +1,145 @@
+name: CI
+
+# main accepts only pull requests (ruleset), so CI runs once per PR update
+# and once on main via release.yml; a push trigger would run it twice.
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    name: Test (Go ${{ matrix.go }}, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        go: ['1.24', '1.25', '1.26']
+        include:
+          - os: macos-latest # arm64
+            go: '1.26'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Verify go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Verify generated code
+        run: |
+          go generate ./...
+          git diff --exit-code
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -failfast -count=1 ./...
+
+      - name: Benchmarks compile and run once
+        run: go test -run=NONE -bench=. -benchtime=1x ./...
+
+      - name: Comparison benchmarks compile and run once
+        if: matrix.go == '1.26'
+        run: go test -C benchmarks -run=NONE -bench=. -benchtime=1x ./...
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Lint (benchmarks module)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+          working-directory: benchmarks
+
+  vulncheck:
+    name: Vulnerability check
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: true
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write # Codecov upload authenticates with the GitHub OIDC token, no secret
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: stable
+          cache: true
+
+      - name: Test with coverage
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage.out
+          use_oidc: true
+
+      - name: Verify coverage
+        run: |
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ { sub("%", "", $3); print $3 }')
+          echo "Total coverage: $total%"
+          if awk "BEGIN { exit !($total < 99) }"; then
+            echo "Coverage is below 99%"
+            exit 1
+          fi
+
+  # One check to require in branch protection, instead of every matrix cell.
+  ok:
+    name: CI passed
+    if: always()
+    needs: [test, lint, vulncheck, coverage]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "$RESULTS"
+          for r in $RESULTS; do
+            [ "$r" = "success" ] || exit 1
+          done
