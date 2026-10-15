@@ -136,7 +136,9 @@ differential and fuzz tests. The differences are deliberate and small:
   not. `net/url` in a module at an older Go version accepts both.
 - `ParseQuery` has no parameter-count limit (`urlmaxqueryparams`).
 - `ParseRequestURI`, `ResolveReference`, `JoinPath`, `Redacted`, JSON and
-  Gob encoding are not provided; `ToStd` converts to a `*url.URL` for them.
+  Gob encoding are not provided; `CopyToStd(&std)` fills a `url.URL` exactly
+  as `url.Parse` would have (160 ns, the strings of `url.URL` are the only
+  allocations), `ToStd()` returns a new one.
 
 ## What it does not do
 
@@ -157,20 +159,22 @@ module; run it with `go test -C benchmarks -bench=. -benchmem`.
 
 | Operation | `gourl` | `net/url` | `fasthttp` |
 |---|---|---|---|
-| Parse a URL | **118 ns**, 0 allocs | 231 ns, 2 allocs | 96 ns, 0 allocs |
-| Assemble (`String`) | **60 ns**, 0 allocs | 82 ns, 2 allocs | 23 ns, 0 allocs |
-| Request URI | **24 ns**, 0 allocs | 33 ns, 1 alloc | 12 ns, 0 allocs |
-| Parse a query (5 pairs) | **114 ns**, 0 allocs | 292 ns, 7 allocs | 125 ns, 0 allocs |
-| Build a query (3 pairs) | **62 ns**, 0 allocs | 314 ns, 9 allocs | 89 ns, 0 allocs |
+| Parse a URL | **118 ns**, 0 allocs | 223 ns, 2 allocs | 95 ns, 0 allocs |
+| Assemble (`String`) | **59 ns**, 0 allocs | 79 ns, 2 allocs | 23 ns, 0 allocs |
+| Request URI | **22 ns**, 0 allocs | 31 ns, 1 alloc | 11 ns, 0 allocs |
+| Parse a query (5 pairs) | **112 ns**, 0 allocs | 284 ns, 7 allocs | 124 ns, 0 allocs |
+| Build a query (3 pairs) | **60 ns**, 0 allocs | 298 ns, 9 allocs | 87 ns, 0 allocs |
 | Query escape, plain | **8 ns**, 0 allocs | 7 ns, 0 allocs | 8 ns, 0 allocs |
-| Query escape, mixed | **30 ns**, 0 allocs | 65 ns, 1 alloc | 33 ns, 0 allocs |
-| Query unescape, plain | **7 ns**, 0 allocs | 22 ns, 0 allocs | 5 ns, 0 allocs |
-| Query unescape, mixed | **70 ns**, 0 allocs | 94 ns, 1 alloc | 37 ns, 0 allocs |
+| Query escape, mixed | **30 ns**, 0 allocs | 66 ns, 1 alloc | 34 ns, 0 allocs |
+| Query unescape, plain | **7 ns**, 0 allocs | 21 ns, 0 allocs | 6 ns, 0 allocs |
+| Query unescape, mixed | **47 ns**, 0 allocs | 89 ns, 1 alloc | 35 ns, 0 allocs |
 
 `fasthttp` is faster at parsing and assembling because it does not validate
 or normalize: `fasthttp.URI` has its own rules and accepts what `net/url`
-rejects. `gourl` applies the `net/url` rules and still comes in ahead of it
-on every operation, with no allocations.
+rejects, and its unescaping never fails (a malformed `%zz` is copied as is).
+`gourl` applies the `net/url` rules, including validation before decoding in
+place, and still comes in ahead of `net/url` on every operation, with no
+allocations.
 
 ## License
 

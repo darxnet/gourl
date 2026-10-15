@@ -97,6 +97,9 @@ var parseTests = []struct {
 		host: "[2020::2020:20:2020:2020%25Windows%20Loves%20Spaces]:2020",
 	},
 	{in: "*", rawPath: "*", path: "*"},
+	{in: "%2A", rawPath: "%2A", path: "*", str: "*"},
+	{in: "%2a", rawPath: "%2a", path: "*"},
+	{in: "/%2A", rawPath: "/%2A", path: "/*"},
 	{in: "http://host?", scheme: "http", host: "host", forceQuery: true},
 	{in: "http://host?#f", scheme: "http", host: "host", forceQuery: true, rawFragment: "f"},
 	{in: "http://host?#", scheme: "http", host: "host", forceQuery: true, str: "http://host?"},
@@ -478,8 +481,42 @@ func TestToStd(t *testing.T) {
 	if std.Path != "/a b" || std.Fragment != "f g" || std.Port() != "80" {
 		t.Errorf("ToStd() = %+v", std)
 	}
-	if _, err := (&gourl.URL{Host: b("[")}).ToStd(); err == nil {
-		t.Error("ToStd of an invalid URL = nil error")
+	var copied url.URL
+	if err := u.CopyToStd(&copied); err != nil || copied.String() != "http://u@h:80/a%20b?q#f%20g" {
+		t.Errorf("CopyToStd = %+v, %v", copied, err)
+	}
+	if copied.RawPath != "" || copied.RawFragment != "f g" {
+		t.Errorf("CopyToStd RawPath, RawFragment = %q, %q", copied.RawPath, copied.RawFragment)
+	}
+	if err := gourl.ParseInto(&u, b("http://user:p%40ss@[fe80::1%25en%300]:8/x%2Fy#a%41")); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.CopyToStd(&copied); err != nil {
+		t.Fatal(err)
+	}
+	pass, _ := copied.User.Password()
+	if copied.Host != "[fe80::1%en00]:8" || pass != "p@ss" || copied.Path != "/x/y" || copied.RawPath != "/x%2Fy" ||
+		copied.Fragment != "aA" || copied.RawFragment != "a%41" {
+		t.Errorf("CopyToStd = %+v", copied)
+	}
+	for in, rawPath := range map[string]string{
+		"*": "", "*#f": "", "*?": "*", "*?q": "*", "%2A": "", "%2a": "%2a", "/a%2Fb": "/a%2Fb", "/a%41": "/a%41",
+	} {
+		if err := gourl.ParseInto(&u, b(in)); err != nil {
+			t.Fatal(err)
+		}
+		if err := u.CopyToStd(&copied); err != nil || copied.RawPath != rawPath {
+			t.Errorf("CopyToStd(%q).RawPath = %q, %v, want %q", in, copied.RawPath, err, rawPath)
+		}
+	}
+	for _, bad := range []gourl.URL{
+		{Host: b("ho st")}, {RawPath: b("%zz")}, {RawFragment: b("%zz")},
+		{User: gourl.User(b("%zz"))}, {User: gourl.UserPassword(nil, b("%zz"))},
+		{Host: b("[::1%25%3F]")}, {Host: b("[%41]")},
+	} {
+		if _, err := bad.ToStd(); err == nil {
+			t.Errorf("ToStd of %+v = nil error", bad)
+		}
 	}
 }
 

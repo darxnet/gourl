@@ -316,13 +316,14 @@ func compareParse(t *testing.T, in string) {
 		t.Fatalf("ParseInto(%q) User.IsZero = %v, net/url User = %v", in, u.User.IsZero(), std.User)
 	}
 	if std.User != nil {
-		name, err := gourl.AppendUnescape(nil, u.User.Username(), gourl.EncodeUserPassword)
+		var name, pass []byte
+		name, err = gourl.AppendUnescape(nil, u.User.Username(), gourl.EncodeUserPassword)
 		if err != nil {
 			t.Fatalf("ParseInto(%q) Username unescape error = %v", in, err)
 		}
 		eq("Username", name, std.User.Username())
 		rawPass, set := u.User.Password()
-		pass, err := gourl.AppendUnescape(nil, rawPass, gourl.EncodeUserPassword)
+		pass, err = gourl.AppendUnescape(nil, rawPass, gourl.EncodeUserPassword)
 		if err != nil {
 			t.Fatalf("ParseInto(%q) Password unescape error = %v", in, err)
 		}
@@ -336,7 +337,8 @@ func compareParse(t *testing.T, in string) {
 	// Host is kept as written; net/url decodes it. Compare through Hostname
 	// where the host has no zone (a zone may use escapes a host may not).
 	if !bytes.Contains(u.Host, []byte("%25")) {
-		host, err := gourl.AppendUnescape(nil, u.Hostname(), gourl.EncodeHost)
+		var host []byte
+		host, err = gourl.AppendUnescape(nil, u.Hostname(), gourl.EncodeHost)
 		if err != nil {
 			t.Fatalf("ParseInto(%q) Hostname unescape error = %v", in, err)
 		}
@@ -353,14 +355,33 @@ func compareParse(t *testing.T, in string) {
 	eq("AppendTo", got, want)
 	eq("AppendRequestURI", u.AppendRequestURI(nil), std.RequestURI())
 
-	// The String form parses back to itself.
+	// CopyToStd is url.Parse of the same input, field by field.
+	var copied url.URL
+	if err = u.CopyToStd(&copied); err != nil {
+		t.Fatalf("ParseInto(%q) CopyToStd error = %v", in, err)
+	}
+	if !reflect.DeepEqual(&copied, std) {
+		t.Errorf("ParseInto(%q) CopyToStd = %+v, net/url %+v", in, copied, *std)
+	}
+
+	// Reparsing the String form agrees with net/url too. Neither parser is
+	// idempotent here: a raw non-ASCII byte in an IPv6 zone is written as an
+	// escape that neither accepts, "%2f%2f @@" becomes "//%20@@", which is
+	// then an authority.
 	var again gourl.URL
-	if err := gourl.ParseInto(&again, got); err != nil {
-		t.Fatalf("ParseInto(%q) = %q, which does not parse: %v", in, got, err)
+	err = gourl.ParseInto(&again, got)
+	stdAgain, stdErr := url.Parse(string(got))
+	if (err != nil) != (stdErr != nil) {
+		t.Fatalf("ParseInto(%q) = %q, reparse error = %v, net/url %v", in, got, err, stdErr)
 	}
-	if s := again.AppendTo(nil); !bytes.Equal(s, got) {
-		t.Errorf("ParseInto(%q) = %q, which reparses to %q", in, got, s)
+	if err != nil {
+		return
 	}
+	s := again.AppendTo(nil)
+	if n := len(again.Scheme); n > 0 {
+		s = append(bytes.ToLower(s[:n:n]), s[n:]...)
+	}
+	eq("reparsed AppendTo", s, stdAgain.String())
 }
 
 var queryInputs = []string{

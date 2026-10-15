@@ -124,32 +124,64 @@ func AppendEscape(dst, src []byte, mode Encoding) []byte {
 // host, as net/url does when parsing. Decoding never grows the data, so
 // AppendUnescape(buf[:0], buf, mode) decodes buf in place.
 func AppendUnescape(dst, src []byte, mode Encoding) ([]byte, error) {
-	n, hasPlus, err := checkEscapes(src, mode)
+	var escapes int
+	var err error
+	first := bytes.IndexByte(src, '%') // first byte that changes
+	switch {
+	case mode == EncodeHost || mode == EncodeZone:
+		// Every byte is checked here, not only the escapes.
+		escapes, _, err = checkHostEscapes(src, mode)
+	case first >= 0:
+		escapes, err = countEscapes(src[first:])
+	}
 	if err != nil {
 		return dst, err
 	}
-	if n == 0 && !hasPlus {
-		return append(dst, src...), nil
-	}
-
 	plus := byte('+')
 	if mode == EncodeQueryComponent {
 		plus = ' '
-	}
-	dst = slices.Grow(dst, len(src)-2*n)
-	for i := 0; i < len(src); i++ {
-		switch c := src[i]; c {
-		case '%':
-			// checkEscapes established that both digits are hexadecimal.
-			dst = append(dst, unhex(src[i+1])<<4|unhex(src[i+2]))
-			i += 2
-		case '+':
-			dst = append(dst, plus)
-		default:
-			dst = append(dst, c)
+		if i := bytes.IndexByte(src, '+'); i >= 0 && (first < 0 || i < first) {
+			first = i
 		}
 	}
+	if first < 0 {
+		return append(dst, src...), nil
+	}
+
+	// The escapes are valid and the output length is known: copy the prefix
+	// that does not change, then write the rest by index. The output never
+	// gets ahead of the input, so dst may be src[:0].
+	n := len(dst)
+	dst = slices.Grow(dst, len(src)-2*escapes)[:n+len(src)-2*escapes]
+	w := n + copy(dst[n:], src[:first])
+	for i := first; i < len(src); i++ {
+		switch c := src[i]; c {
+		case '%':
+			dst[w] = unhex(src[i+1])<<4 | unhex(src[i+2])
+			i += 2
+		case '+':
+			dst[w] = plus
+		default:
+			dst[w] = c
+		}
+		w++
+	}
 	return dst, nil
+}
+
+// countEscapes validates the escapes of s, which starts at its first "%".
+func countEscapes(s []byte) (escapes int, err error) {
+	for i := 0; i < len(s); i++ {
+		if s[i] != '%' {
+			continue
+		}
+		if i+2 >= len(s) || !ishex(s[i+1]) || !ishex(s[i+2]) {
+			return 0, escapeError(s[i:])
+		}
+		escapes++
+		i += 2
+	}
+	return escapes, nil
 }
 
 // checkEscapes validates the percent-escapes of s for mode without
@@ -259,10 +291,41 @@ func appendReencoded(dst, raw []byte, mode Encoding) []byte {
 	return dst
 }
 
+// reencodesToSelf reports whether escape(unescape(raw)) for mode is raw
+// itself, that is, whether raw is the default encoding of its decoded form.
+// net/url sets RawPath and RawFragment only when it is not.
+func reencodesToSelf(raw []byte, mode Encoding) bool {
+	k := 0 // position in raw of the next byte the re-encoding must match
+	for i := 0; i < len(raw); i++ {
+		c := raw[i]
+		if c == '%' && i+2 < len(raw) && ishex(raw[i+1]) && ishex(raw[i+2]) {
+			c = unhex(raw[i+1])<<4 | unhex(raw[i+2])
+			i += 2
+		}
+		if shouldEscape(c, mode) {
+			if k+3 > len(raw) || raw[k] != '%' || raw[k+1] != upperhex[c>>4] || raw[k+2] != upperhex[c&15] {
+				return false
+			}
+			k += 3
+		} else {
+			if k == len(raw) || raw[k] != c {
+				return false
+			}
+			k++
+		}
+	}
+	return k == len(raw)
+}
+
 // appendEscaped appends the escaped form of a raw path or fragment: raw
 // itself when it is already validly encoded, its normalization otherwise.
 // This matches URL.EscapedPath and URL.EscapedFragment of net/url.
 func appendEscaped(dst, raw []byte, mode Encoding) []byte {
+	// net/url writes the "*" request target unescaped even when it was
+	// given as "%2A", its default encoding (go.dev/issue/11202).
+	if mode == EncodePath && string(raw) == "%2A" {
+		return append(dst, '*')
+	}
 	if validEncoded(raw, mode) {
 		return append(dst, raw...)
 	}

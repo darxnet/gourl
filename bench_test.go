@@ -1,6 +1,7 @@
 package gourl_test
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/darxnet/gourl"
@@ -88,5 +89,15 @@ func BenchmarkAppendQueryUnescape(b *testing.B) {
 				buf, _ = gourl.AppendQueryUnescape(buf[:0], tt.src)
 			}
 		})
+	}
+}
+
+func BenchmarkCopyToStd(b *testing.B) {
+	var u gourl.URL
+	_ = gourl.ParseInto(&u, benchURL)
+	var std url.URL
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = u.CopyToStd(&std)
 	}
 }

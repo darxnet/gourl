@@ -29,6 +29,7 @@ import (
 	"bytes"
 	"errors"
 	"net/url"
+	"strings"
 )
 
 // Errors returned by ParseInto and ParseQuery, in addition to url.EscapeError
@@ -228,10 +229,109 @@ func (u *URL) AppendRequestURI(dst []byte) []byte {
 	return dst
 }
 
-// ToStd converts the URL to a url.URL, for the operations this package does
-// not provide (ResolveReference, JoinPath, ...). It allocates.
+// ToStd converts the URL to a new url.URL, for the operations this package
+// does not provide (ResolveReference, JoinPath, ...). See CopyToStd.
 func (u *URL) ToStd() (*url.URL, error) {
-	return url.Parse(string(u.AppendTo(nil)))
+	var std url.URL
+	if err := u.CopyToStd(&std); err != nil {
+		return nil, err
+	}
+	return &std, nil
+}
+
+// CopyToStd fills dst with the URL as url.Parse would have parsed the same
+// input: Scheme lowercased, Host, Path, Fragment and the userinfo decoded,
+// RawPath and RawFragment set only when the default encoding of the decoded
+// form differs from the original. It allocates the strings of dst and
+// nothing else. It fails for a URL assembled by hand whose RawPath,
+// RawFragment, Host or userinfo is not validly encoded.
+func (u *URL) CopyToStd(dst *url.URL) error {
+	*dst = url.URL{
+		Scheme:     strings.ToLower(string(u.Scheme)),
+		Opaque:     string(u.Opaque),
+		RawQuery:   string(u.RawQuery),
+		OmitHost:   u.OmitHost,
+		ForceQuery: u.ForceQuery,
+	}
+	if !u.User.IsZero() {
+		username, err := decodedString(u.User.Username(), EncodeUserPassword)
+		if err != nil {
+			return err
+		}
+		if rawPassword, set := u.User.Password(); set {
+			password, err := decodedString(rawPassword, EncodeUserPassword)
+			if err != nil {
+				return err
+			}
+			dst.User = url.UserPassword(username, password)
+		} else {
+			dst.User = url.User(username)
+		}
+	}
+
+	var scratch [128]byte
+	host, err := appendDecodedHost(scratch[:0], u.Host)
+	if err != nil {
+		return err
+	}
+	dst.Host = string(host)
+
+	if dst.Path, err = decodedString(u.RawPath, EncodePath); err != nil {
+		return err
+	}
+	if !u.isStarTarget() && !reencodesToSelf(u.RawPath, EncodePath) {
+		dst.RawPath = string(u.RawPath)
+	}
+	if dst.Fragment, err = decodedString(u.RawFragment, EncodeFragment); err != nil {
+		return err
+	}
+	if !reencodesToSelf(u.RawFragment, EncodeFragment) {
+		dst.RawFragment = string(u.RawFragment)
+	}
+	return nil
+}
+
+// isStarTarget reports whether the URL is the bare "*" request target, the
+// one input url.Parse takes without going through its path logic, so that
+// RawPath stays empty.
+func (u *URL) isStarTarget() bool {
+	return string(u.RawPath) == "*" && len(u.Scheme) == 0 && len(u.Opaque) == 0 && len(u.Host) == 0 &&
+		u.User.IsZero() && len(u.RawQuery) == 0 && !u.ForceQuery
+}
+
+// decodedString returns raw decoded for mode as a string, in one allocation
+// when raw is short or has nothing to decode.
+func decodedString(raw []byte, mode Encoding) (string, error) {
+	escapes, hasPlus, err := checkEscapes(raw, mode)
+	if err != nil {
+		return "", err
+	}
+	if escapes == 0 && !hasPlus {
+		return string(raw), nil
+	}
+	var scratch [128]byte
+	decoded, _ := AppendUnescape(scratch[:0], raw, mode)
+	return string(decoded), nil
+}
+
+// appendDecodedHost appends the host as url.URL.Host holds it: decoded, with
+// the zone of an IPv6 literal decoded by its own rules.
+func appendDecodedHost(dst, host []byte) ([]byte, error) {
+	if len(host) > 0 && host[0] == '[' {
+		if closing := bytes.LastIndexByte(host, ']'); closing > 0 {
+			if zone := bytes.Index(host[:closing], []byte("%25")); zone >= 0 {
+				var err error
+				if dst, err = AppendUnescape(dst, host[:zone], EncodeHost); err != nil {
+					return dst, err
+				}
+				if dst, err = AppendUnescape(dst, host[zone:closing], EncodeZone); err != nil {
+					return dst, err
+				}
+				return AppendUnescape(dst, host[closing:], EncodeHost)
+			}
+		}
+	}
+	return AppendUnescape(dst, host, EncodeHost)
 }
 
 func insert(dst []byte, at int, s string) []byte {
