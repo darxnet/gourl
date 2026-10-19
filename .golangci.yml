@@ -53,3 +53,7 @@ linters:
     - wrapcheck
     - wsl
     - wsl_v5
+
+formatters:
+  enable:
+    - gofmt
