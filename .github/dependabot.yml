@@ -6,15 +6,27 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "chore(deps)"
+    groups:
+      go-modules:
+        patterns:
+          - "*"
   - package-ecosystem: "gomod"
     directory: "/benchmarks"
     schedule:
       interval: "weekly"
     commit-message:
       prefix: "chore(bench)"
+    groups:
+      go-modules:
+        patterns:
+          - "*"
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
     commit-message:
       prefix: "chore(ci)"
+    groups:
+      github-actions:
+        patterns:
+          - "*"
