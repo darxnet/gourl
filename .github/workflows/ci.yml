@@ -19,11 +19,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest]
-        go: ['1.24', '1.25', '1.26']
-        include:
-          - os: macos-latest # arm64
-            go: '1.26'
+        os: [ubuntu-latest, macos-latest] # amd64, arm64
+        go: [stable, oldstable]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
@@ -54,7 +51,7 @@ jobs:
         run: go test -run=NONE -bench=. -benchtime=1x ./...
 
       - name: Comparison benchmarks compile and run once
-        if: matrix.go == '1.26'
+        if: matrix.go == 'stable'
         run: go test -C benchmarks -run=NONE -bench=. -benchtime=1x ./...
 
   lint:
