@@ -24,33 +24,40 @@ jobs:
     name: Release
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: go.mod
-          cache: true
-
-      - name: Install svu
-        run: go install github.com/caarlos0/svu/v2@latest
-
-      # Releases start after v0.1.0 is tagged by hand; until then every
-      # merge to main is just verified.
       - name: Create Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "$(svu current)" = "v0.0.0" ]; then
+          # The version comes from the Conventional Commit subjects since the
+          # last tag, never from bodies: Dependabot puts the changelogs of its
+          # updates there, "fix:" and "BREAKING CHANGE:" lines included.
+          # feat → minor, fix → patch, "type!:" → minor while on v0; nothing
+          # else releases. The first tag is created by hand.
+          TAG=$(git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*') || {
             echo "No release tag yet, skipping release."
             exit 0
-          fi
-          NEXT=$(svu next)
-          if [ "$(svu current)" == "$NEXT" ]; then
-            echo "Version $NEXT already exists, skipping release."
+          }
+          SUBJECTS=$(git log --format=%s "$TAG..HEAD")
+          IFS=. read -r MAJOR MINOR PATCH <<<"${TAG#v}"
+          if grep -qE '^[a-z]+(\([^)]*\))?!:' <<<"$SUBJECTS"; then
+            if [ "$MAJOR" -ne 0 ]; then
+              echo "::error::A breaking change after $TAG needs a /v$((MAJOR + 1)) module path; release it by hand."
+              exit 1
+            fi
+            NEXT="v0.$((MINOR + 1)).0"
+          elif grep -qE '^feat(\([^)]*\))?:' <<<"$SUBJECTS"; then
+            NEXT="v$MAJOR.$((MINOR + 1)).0"
+          elif grep -qE '^fix(\([^)]*\))?:' <<<"$SUBJECTS"; then
+            NEXT="v$MAJOR.$MINOR.$((PATCH + 1))"
           else
-            echo "Releasing $NEXT..."
-            gh release create "$NEXT" --generate-notes
+            echo "No feat, fix or breaking change since $TAG, skipping release."
+            exit 0
           fi
+          echo "Releasing $NEXT..."
+          gh release create "$NEXT" --target "$GITHUB_SHA" --generate-notes
