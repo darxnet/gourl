@@ -44,16 +44,15 @@ const upperhex = "0123456789ABCDEF"
 func ishex(c byte) bool { return table[c]&hexChar != 0 }
 
 // unhex returns the value of a hexadecimal digit; the caller checks ishex.
-func unhex(c byte) byte {
-	switch {
-	case '0' <= c && c <= '9':
-		return c - '0'
-	case 'a' <= c && c <= 'f':
-		return c - 'a' + 10
-	case 'A' <= c && c <= 'F':
-		return c - 'A' + 10
-	}
-	return 0
+// It is a table lookup: a mix of digits and letters, as in "%D0%9F", makes
+// a comparison chain mispredict on every escape.
+func unhex(c byte) byte { return hexValue[c] }
+
+// hexValue maps a hexadecimal digit to its value and every other byte to 0.
+var hexValue = [256]byte{
+	'0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9,
+	'A': 10, 'B': 11, 'C': 12, 'D': 13, 'E': 14, 'F': 15,
+	'a': 10, 'b': 11, 'c': 12, 'd': 13, 'e': 14, 'f': 15,
 }
 
 func shouldEscape(c byte, mode Encoding) bool { return table[c]&mode == 0 }
