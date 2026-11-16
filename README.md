@@ -182,19 +182,20 @@ comparison lives in the [benchmarks](benchmarks) module; run it with
 | Query escape, mixed | **30 ns**, 0 allocs | 54 ns, 1 alloc | 32 ns, 0 allocs |
 | Query escape, Cyrillic | **43 ns**, 0 allocs | 106 ns, 2 allocs | 41 ns, 0 allocs |
 | Query escape, binary | **38 ns**, 0 allocs | 93 ns, 2 allocs | 37 ns, 0 allocs |
-| Query unescape, plain | **7 ns**, 0 allocs | 21 ns, 0 allocs | 7 ns, 0 allocs |
-| Query unescape, mixed | **47 ns**, 0 allocs | 90 ns, 1 alloc | 38 ns, 0 allocs |
-| Query unescape, Cyrillic | **129 ns**, 0 allocs | 142 ns, 1 alloc | 61 ns, 0 allocs |
-| Query unescape, binary | **118 ns**, 0 allocs | 125 ns, 1 alloc | 52 ns, 0 allocs |
+| Query unescape, plain | **6 ns**, 0 allocs | 21 ns, 0 allocs | 6 ns, 0 allocs |
+| Query unescape, mixed | **43 ns**, 0 allocs | 92 ns, 1 alloc | 38 ns, 0 allocs |
+| Query unescape, Cyrillic | **89 ns**, 0 allocs | 146 ns, 1 alloc | 62 ns, 0 allocs |
+| Query unescape, binary | **80 ns**, 0 allocs | 127 ns, 1 alloc | 53 ns, 0 allocs |
 
-`fasthttp` is faster at parsing URLs and assembling because it does not
-validate or normalize: `fasthttp.URI` has its own rules and accepts what
-`net/url` rejects, and its unescaping never fails (a malformed `%zz` is
-copied as is).
-`gourl` applies the `net/url` rules, including validation before decoding in
-place, and still comes in ahead of `net/url` on every operation with no
-allocations; the one tie is escaping plain text, where `net/url` returns its
-input unchanged.
+`fasthttp` is faster at parsing URLs, assembling and unescaping because it
+does not validate or normalize: `fasthttp.URI` has its own rules and accepts
+what `net/url` rejects, and its unescaping never fails (a malformed `%zz` is
+copied as is), so it decodes in one pass. `gourl` checks every escape first
+and decodes in a second pass, so that a malformed escape returns an error
+with the input untouched, also when decoding in place; `net/url` allocates
+a new string and has no such concern. `gourl` still comes in ahead of
+`net/url` on every operation with no allocations; the one tie is escaping
+plain text, where `net/url` returns its input unchanged.
 
 ## License
 
