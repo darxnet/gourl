@@ -159,9 +159,11 @@ func (u *URL) AppendFragment(dst []byte) ([]byte, error) {
 
 // AppendTo appends the URL to dst and returns the extended buffer. The
 // output is what url.URL.String returns for the same URL (with Scheme as
-// written): components that are not validly encoded are escaped, a host
-// with a path gets a leading "/", a relative path whose first segment has a
-// colon gets a leading "./".
+// written) in Go 1.27 and later: components that are not validly encoded
+// are escaped, a host with a path gets a leading "/", a path starting with
+// "//" after a scheme without an authority gets its first "/" escaped as
+// "%2F", a relative path whose first segment has a colon gets a leading
+// "./".
 func (u *URL) AppendTo(dst []byte) []byte {
 	base := len(dst)
 	if len(u.Scheme) > 0 {
@@ -187,6 +189,12 @@ func (u *URL) AppendTo(dst []byte) []byte {
 		dst = appendEscaped(dst, u.RawPath, EncodePath)
 		path := dst[start:]
 		switch {
+		case u.OmitHost && len(u.Host) == 0 && !hasUser && bytes.HasPrefix(path, []byte("//")):
+			// Go 1.27: a path starting with "//" and no authority gets its
+			// first "/" escaped, or reparsing would read it as one
+			// ("file:/%2fhost/p" must not become "file://host/p").
+			dst[start] = '%'
+			dst = insert(dst, start+1, "2F")
 		case len(path) > 0 && path[0] != '/' && len(u.Host) > 0:
 			dst = insert(dst, start, "/")
 		case start == base && firstSegmentHasColon(path):

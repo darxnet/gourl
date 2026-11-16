@@ -60,6 +60,12 @@ var parseTests = []struct {
 	},
 	{in: "file:///home/adg/rabbits", scheme: "file", rawPath: "/home/adg/rabbits", path: "/home/adg/rabbits"},
 	{in: "file:/home", scheme: "file", rawPath: "/home", path: "/home", omitHost: true},
+	// Go 1.27: a path starting with "//" after a scheme without an authority
+	// keeps its first "/" escaped, or reparsing would read an authority.
+	// A validly encoded path is written as is and does not start with "//".
+	{in: "file:/%2fhost/p", scheme: "file", rawPath: "/%2fhost/p", path: "//host/p", omitHost: true},
+	{in: "A:/%2f ", scheme: "A", rawPath: "/%2f ", path: "// ", omitHost: true, str: "A:%2F/%20"},
+	{in: "s:/%2f%2F ", scheme: "s", rawPath: "/%2f%2F ", path: "/// ", omitHost: true, str: "s:%2F//%20"},
 	{in: "MaIlTo:webmaster@golang.org", scheme: "MaIlTo", opaque: "webmaster@golang.org"},
 	{in: "a/b/c", rawPath: "a/b/c", path: "a/b/c"},
 	{
@@ -401,6 +407,12 @@ func TestAppendTo(t *testing.T) {
 		{gourl.URL{Scheme: b("file"), RawPath: b("/x")}, "file:///x"},
 		{gourl.URL{Scheme: b("file"), RawPath: b("/x"), OmitHost: true}, "file:/x"},
 		{gourl.URL{Scheme: b("file"), Host: b("h"), RawPath: b("/x"), OmitHost: true}, "file://h/x"},
+		// Go 1.27: without an authority a leading "//" would be read as one.
+		{gourl.URL{Scheme: b("file"), RawPath: b("//h/p"), OmitHost: true}, "file:%2F/h/p"},
+		{gourl.URL{RawPath: b("//h:p"), OmitHost: true}, "%2F/h:p"},
+		{gourl.URL{Scheme: b("file"), Host: b("h"), RawPath: b("//p"), OmitHost: true}, "file://h//p"},
+		{gourl.URL{Scheme: b("file"), User: gourl.User(b("u")), RawPath: b("//p"), OmitHost: true}, "file://u@//p"},
+		{gourl.URL{Scheme: b("file"), RawPath: b("//p")}, "file:////p"},
 		{gourl.URL{Scheme: b("http"), Host: b("h"), ForceQuery: true}, "http://h?"},
 		{gourl.URL{Scheme: b("http")}, "http:"},
 		{gourl.URL{RawPath: b("*")}, "*"},

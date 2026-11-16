@@ -2,8 +2,9 @@
 
 // Differential tests against net/url: gourl promises the parsing and
 // escaping rules of net/url in Go 1.26, so these run only on that version
-// or later; the hand-written tables in the other files pin the rules
-// themselves and run everywhere.
+// or later, and the String form of Go 1.27 (stdString applies it to the
+// output of Go 1.26); the hand-written tables in the other files pin the
+// rules themselves and run everywhere.
 package gourl_test
 
 import (
@@ -45,6 +46,9 @@ var parseInputs = []string{
 	"http:www.google.com/?q=go+language",
 	"http:%2f%2fwww.google.com/?q=go+language",
 	"mailto:/webmaster@golang.org",
+	"file:/%2fhost/p",
+	"s:/%2f%2F ",
+	"A:/%2f ",
 	"mailto:webmaster@golang.org",
 	"/foo?query=http://bad",
 	"//foo",
@@ -348,7 +352,7 @@ func compareParse(t *testing.T, in string) {
 
 	// The String form is identical up to the scheme case.
 	got := u.AppendTo(nil)
-	want := std.String()
+	want := stdString(std)
 	if n := len(u.Scheme); n > 0 {
 		got = append(bytes.ToLower(got[:n:n]), got[n:]...)
 	}
@@ -381,7 +385,7 @@ func compareParse(t *testing.T, in string) {
 	if n := len(again.Scheme); n > 0 {
 		s = append(bytes.ToLower(s[:n:n]), s[n:]...)
 	}
-	eq("reparsed AppendTo", s, stdAgain.String())
+	eq("reparsed AppendTo", s, stdString(stdAgain))
 }
 
 var queryInputs = []string{
