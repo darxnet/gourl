@@ -1,7 +1,5 @@
 package gourl
 
-import "bytes"
-
 // A Param is one key=value pair of a query, with both parts as written in
 // the query (percent-encoded, "+" for space). AppendKey and AppendValue
 // decode them.
@@ -23,33 +21,61 @@ type Params []Param
 func ParseQuery(dst Params, query []byte) (Params, error) {
 	var err error
 	for len(query) > 0 {
-		var pair []byte
-		pair, query, _ = cutByte(query, '&')
-		if bytes.IndexByte(pair, ';') >= 0 {
-			if err == nil {
-				err = ErrSemicolonSeparator
-			}
-			continue
-		}
+		end, eq, bad, semi := scanPair(query)
+		pair := query[:end]
+		query = query[min(end+1, len(query)):]
 		if len(pair) == 0 {
 			continue
 		}
-		key, value, _ := cutByte(pair, '=')
-		if _, _, e := checkEscapes(key, EncodeQueryComponent); e != nil {
-			if err == nil {
-				err = e
-			}
+		key, value := pair, []byte(nil)
+		if eq >= 0 {
+			key, value = pair[:eq], pair[eq+1:]
+		}
+		var e error
+		switch {
+		case semi:
+			e = ErrSemicolonSeparator
+		case bad >= 0 && (eq < 0 || bad < eq):
+			e = escapeError(key[bad:])
+		case bad >= 0:
+			e = escapeError(value[bad-eq-1:])
+		default:
+			dst = append(dst, Param{Key: key, Value: value})
 			continue
 		}
-		if _, _, e := checkEscapes(value, EncodeQueryComponent); e != nil {
-			if err == nil {
-				err = e
-			}
-			continue
+		if err == nil {
+			err = e
 		}
-		dst = append(dst, Param{Key: key, Value: value})
 	}
 	return dst, err
+}
+
+// scanPair finds, in one pass, the end of the first pair of query (the
+// index of "&" or len(query)), its first "=" and its first malformed escape
+// (-1 if none), and whether it contains ";". "=", "&" and ";" are not hex
+// digits, so an escape cut short by them is malformed without a separate
+// bounds check against the key or the pair.
+func scanPair(query []byte) (end, eq, bad int, semi bool) {
+	eq, bad = -1, -1
+	for i := 0; i < len(query); i++ {
+		switch query[i] {
+		case '&':
+			return i, eq, bad, semi
+		case ';':
+			semi = true
+		case '=':
+			if eq < 0 {
+				eq = i
+			}
+		case '%':
+			if i+2 < len(query) && ishex(query[i+1]) && ishex(query[i+2]) {
+				i += 2
+			} else if bad < 0 {
+				bad = i
+			}
+		}
+	}
+	return len(query), eq, bad, semi
 }
 
 // Get returns the value of the first pair whose decoded key equals key, as

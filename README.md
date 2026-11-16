@@ -167,25 +167,26 @@ comparison lives in the [benchmarks](benchmarks) module; run it with
 
 | Operation | `gourl` | `net/url` | `fasthttp` |
 |---|---|---|---|
-| Parse a URL | **109 ns**, 0 allocs | 215 ns, 2 allocs | 98 ns, 0 allocs |
+| Parse a URL | **109 ns**, 0 allocs | 217 ns, 2 allocs | 99 ns, 0 allocs |
 | Assemble (`String`) | **58 ns**, 0 allocs | 78 ns, 2 allocs | 23 ns, 0 allocs |
-| Request URI | **22 ns**, 0 allocs | 28 ns, 1 alloc | 12 ns, 0 allocs |
-| Parse a query (5 pairs) | **114 ns**, 0 allocs | 279 ns, 7 allocs | 91 ns, 0 allocs |
-| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 265 ns, 9 allocs | 89 ns, 0 allocs |
-| Build a query (3 pairs), Cyrillic | **76 ns**, 0 allocs | 328 ns, 10 allocs | 100 ns, 0 allocs |
-| Build a query (3 pairs), binary | **71 ns**, 0 allocs | 316 ns, 10 allocs | 93 ns, 0 allocs |
+| Request URI | **22 ns**, 0 allocs | 28 ns, 1 alloc | 11 ns, 0 allocs |
+| Parse a query (5 pairs) | **80 ns**, 0 allocs | 283 ns, 7 allocs | 91 ns, 0 allocs |
+| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 268 ns, 9 allocs | 91 ns, 0 allocs |
+| Build a query (3 pairs), Cyrillic | **77 ns**, 0 allocs | 347 ns, 10 allocs | 102 ns, 0 allocs |
+| Build a query (3 pairs), binary | **72 ns**, 0 allocs | 320 ns, 10 allocs | 93 ns, 0 allocs |
 | Query escape, plain | **8 ns**, 0 allocs | 7 ns, 0 allocs | 8 ns, 0 allocs |
-| Query escape, mixed | **30 ns**, 0 allocs | 55 ns, 1 alloc | 32 ns, 0 allocs |
-| Query escape, Cyrillic | **43 ns**, 0 allocs | 107 ns, 2 allocs | 42 ns, 0 allocs |
-| Query escape, binary | **39 ns**, 0 allocs | 97 ns, 2 allocs | 37 ns, 0 allocs |
+| Query escape, mixed | **30 ns**, 0 allocs | 54 ns, 1 alloc | 32 ns, 0 allocs |
+| Query escape, Cyrillic | **43 ns**, 0 allocs | 106 ns, 2 allocs | 41 ns, 0 allocs |
+| Query escape, binary | **38 ns**, 0 allocs | 93 ns, 2 allocs | 37 ns, 0 allocs |
 | Query unescape, plain | **7 ns**, 0 allocs | 21 ns, 0 allocs | 7 ns, 0 allocs |
-| Query unescape, mixed | **48 ns**, 0 allocs | 92 ns, 1 alloc | 37 ns, 0 allocs |
-| Query unescape, Cyrillic | **128 ns**, 0 allocs | 143 ns, 1 alloc | 61 ns, 0 allocs |
-| Query unescape, binary | **116 ns**, 0 allocs | 124 ns, 1 alloc | 52 ns, 0 allocs |
+| Query unescape, mixed | **47 ns**, 0 allocs | 90 ns, 1 alloc | 38 ns, 0 allocs |
+| Query unescape, Cyrillic | **129 ns**, 0 allocs | 142 ns, 1 alloc | 61 ns, 0 allocs |
+| Query unescape, binary | **118 ns**, 0 allocs | 125 ns, 1 alloc | 52 ns, 0 allocs |
 
-`fasthttp` is faster at parsing and assembling because it does not validate
-or normalize: `fasthttp.URI` has its own rules and accepts what `net/url`
-rejects, and its unescaping never fails (a malformed `%zz` is copied as is).
+`fasthttp` is faster at parsing URLs and assembling because it does not
+validate or normalize: `fasthttp.URI` has its own rules and accepts what
+`net/url` rejects, and its unescaping never fails (a malformed `%zz` is
+copied as is).
 `gourl` applies the `net/url` rules, including validation before decoding in
 place, and still comes in ahead of `net/url` on every operation with no
 allocations; the one tie is escaping plain text, where `net/url` returns its
