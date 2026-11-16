@@ -24,9 +24,9 @@ request for data that lives microseconds.
 | Parse a URL | **0 allocs**, fields are views into the input | 2 allocs |
 | Assemble a URL (`String`) | **0 allocs**, appends to your buffer | 2 allocs |
 | Parse a query | **0 allocs**, ordered `[]Param` of views | 7 allocs, unordered map |
-| Build a query | **0 allocs**, `AppendParam` straight into the buffer | 9 allocs |
-| Escape / unescape | **0 allocs**, append form, unescape in place | 1 alloc when anything changes |
-| Parsing rules | those of `net/url` (Go 1.26) | — |
+| Build a query | **0 allocs**, `AppendParam` straight into the buffer | 9–10 allocs |
+| Escape / unescape | **0 allocs**, append form, unescape in place | 1–2 allocs when anything changes |
+| Parsing rules | those of `net/url` (Go 1.26 and later) | — |
 | Dependencies | none | — |
 
 ## When to use it
@@ -76,6 +76,11 @@ port, IPv6 literals and zones, userinfo, percent-escapes in the path and
 fragment — and returns `gourl.Err*` sentinels or `url.EscapeError` /
 `url.InvalidHostError`.
 
+Like `net/url`, `ParseInto` accepts userinfo (`http://user:pass@host/`) in any
+URL, so check `u.User.IsZero()` if your input must not carry credentials.
+`AppendRequestURI` writes only the path and query and never the userinfo;
+`AppendTo` writes it, as `URL.String` does.
+
 ### Building a query
 
 ```go
@@ -121,8 +126,9 @@ dst, err = gourl.AppendUnescape(dst, src, gourl.EncodeHost)
 
 ## Compatibility with `net/url`
 
-The rules are those of `net/url` in Go 1.26 and are checked against it by
-differential and fuzz tests. The differences are deliberate and small:
+The rules are those of `net/url` in Go 1.26 and 1.27 and are checked against
+it by differential and fuzz tests on the stable and oldstable Go releases.
+The differences are deliberate and small:
 
 - **Everything is kept as written.** `Scheme` is not lowercased; `Host`,
   `RawPath`, `RawFragment` and the userinfo keep their percent-encoding.
@@ -153,28 +159,37 @@ differential and fuzz tests. The differences are deliberate and small:
 
 ## Benchmarks
 
-`gourl` against `net/url` and `fasthttp` v1.75.0 on the same inputs (Apple
-M3 Pro, Go 1.26.5). The comparison lives in the [benchmarks](benchmarks)
-module; run it with `go test -C benchmarks -bench=. -benchmem`.
+`gourl` against `net/url` and `fasthttp` v1.79.0 on the same inputs (Apple
+M3 Pro, Go 1.27.2). The escaping inputs go from cheap to expensive: plain
+ASCII, mixed text, Cyrillic (every letter escaped) and binary data. The
+comparison lives in the [benchmarks](benchmarks) module; run it with
+`go test -C benchmarks -bench=. -benchmem`.
 
 | Operation | `gourl` | `net/url` | `fasthttp` |
 |---|---|---|---|
-| Parse a URL | **118 ns**, 0 allocs | 223 ns, 2 allocs | 95 ns, 0 allocs |
-| Assemble (`String`) | **59 ns**, 0 allocs | 79 ns, 2 allocs | 23 ns, 0 allocs |
-| Request URI | **22 ns**, 0 allocs | 31 ns, 1 alloc | 11 ns, 0 allocs |
-| Parse a query (5 pairs) | **112 ns**, 0 allocs | 284 ns, 7 allocs | 124 ns, 0 allocs |
-| Build a query (3 pairs) | **60 ns**, 0 allocs | 298 ns, 9 allocs | 87 ns, 0 allocs |
+| Parse a URL | **109 ns**, 0 allocs | 215 ns, 2 allocs | 98 ns, 0 allocs |
+| Assemble (`String`) | **58 ns**, 0 allocs | 78 ns, 2 allocs | 23 ns, 0 allocs |
+| Request URI | **22 ns**, 0 allocs | 28 ns, 1 alloc | 12 ns, 0 allocs |
+| Parse a query (5 pairs) | **114 ns**, 0 allocs | 279 ns, 7 allocs | 91 ns, 0 allocs |
+| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 265 ns, 9 allocs | 89 ns, 0 allocs |
+| Build a query (3 pairs), Cyrillic | **76 ns**, 0 allocs | 328 ns, 10 allocs | 100 ns, 0 allocs |
+| Build a query (3 pairs), binary | **71 ns**, 0 allocs | 316 ns, 10 allocs | 93 ns, 0 allocs |
 | Query escape, plain | **8 ns**, 0 allocs | 7 ns, 0 allocs | 8 ns, 0 allocs |
-| Query escape, mixed | **30 ns**, 0 allocs | 66 ns, 1 alloc | 34 ns, 0 allocs |
-| Query unescape, plain | **7 ns**, 0 allocs | 21 ns, 0 allocs | 6 ns, 0 allocs |
-| Query unescape, mixed | **47 ns**, 0 allocs | 89 ns, 1 alloc | 35 ns, 0 allocs |
+| Query escape, mixed | **30 ns**, 0 allocs | 55 ns, 1 alloc | 32 ns, 0 allocs |
+| Query escape, Cyrillic | **43 ns**, 0 allocs | 107 ns, 2 allocs | 42 ns, 0 allocs |
+| Query escape, binary | **39 ns**, 0 allocs | 97 ns, 2 allocs | 37 ns, 0 allocs |
+| Query unescape, plain | **7 ns**, 0 allocs | 21 ns, 0 allocs | 7 ns, 0 allocs |
+| Query unescape, mixed | **48 ns**, 0 allocs | 92 ns, 1 alloc | 37 ns, 0 allocs |
+| Query unescape, Cyrillic | **128 ns**, 0 allocs | 143 ns, 1 alloc | 61 ns, 0 allocs |
+| Query unescape, binary | **116 ns**, 0 allocs | 124 ns, 1 alloc | 52 ns, 0 allocs |
 
 `fasthttp` is faster at parsing and assembling because it does not validate
 or normalize: `fasthttp.URI` has its own rules and accepts what `net/url`
 rejects, and its unescaping never fails (a malformed `%zz` is copied as is).
 `gourl` applies the `net/url` rules, including validation before decoding in
-place, and still comes in ahead of `net/url` on every operation, with no
-allocations.
+place, and still comes in ahead of `net/url` on every operation with no
+allocations; the one tie is escaping plain text, where `net/url` returns its
+input unchanged.
 
 ## License
 

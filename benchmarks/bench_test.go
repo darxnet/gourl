@@ -16,10 +16,22 @@ var (
 	rawQuery = "page=2&sort=name+asc&q=caf%C3%A9&filter=active&limit=50"
 	plain    = "plain_text-only.42"
 	mixed    = "hello world & friends/café?"
+	// cyrillic and binary are the worst cases for net/url: almost every
+	// byte is escaped.
+	cyrillic = "Привіт, світе! Як справи?"
+	binary   = "\x00\x01\x02\x03\x7f\x80\x9f\xa0\xbf\xc0\xdf\xe0\xef\xf0\xfe\xff\x10\x1f &=%+#?/\\\"'<>[]{}|^`"
 
 	rawURLBytes   = []byte(rawURL)
 	rawQueryBytes = []byte(rawQuery)
-	mixedBytes    = []byte(mixed)
+
+	// texts are the values for the escaping benchmarks, from cheapest to
+	// most expensive.
+	texts = []struct{ name, src string }{
+		{"plain", plain},
+		{"mixed", mixed},
+		{"cyrillic", cyrillic},
+		{"binary", binary},
+	}
 )
 
 func BenchmarkParse(b *testing.B) {
@@ -126,43 +138,43 @@ func BenchmarkBuildQuery(b *testing.B) {
 	key1, val1 := []byte("chat_id"), []byte("42")
 	key2 := []byte("text")
 	key3, val3 := []byte("parse_mode"), []byte("HTML")
-	b.Run("gourl", func(b *testing.B) {
-		buf := make([]byte, 0, 256)
-		b.ReportAllocs()
-		for b.Loop() {
-			buf = gourl.AppendParam(buf[:0], key1, val1)
-			buf = gourl.AppendParam(buf, key2, mixedBytes)
-			buf = gourl.AppendParam(buf, key3, val3)
-		}
-	})
-	b.Run("net/url", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			v := url.Values{}
-			v.Set("chat_id", "42")
-			v.Set("text", mixed)
-			v.Set("parse_mode", "HTML")
-			_ = v.Encode()
-		}
-	})
-	b.Run("fasthttp", func(b *testing.B) {
-		var a fasthttp.Args
-		b.ReportAllocs()
-		for b.Loop() {
-			a.Reset()
-			a.SetBytesKV(key1, val1)
-			a.SetBytesKV(key2, mixedBytes)
-			a.SetBytesKV(key3, val3)
-			_ = a.QueryString()
-		}
-	})
+	for _, tt := range texts[1:] {
+		text := []byte(tt.src)
+		b.Run("gourl/"+tt.name, func(b *testing.B) {
+			buf := make([]byte, 0, 256)
+			b.ReportAllocs()
+			for b.Loop() {
+				buf = gourl.AppendParam(buf[:0], key1, val1)
+				buf = gourl.AppendParam(buf, key2, text)
+				buf = gourl.AppendParam(buf, key3, val3)
+			}
+		})
+		b.Run("net/url/"+tt.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				v := url.Values{}
+				v.Set("chat_id", "42")
+				v.Set("text", tt.src)
+				v.Set("parse_mode", "HTML")
+				_ = v.Encode()
+			}
+		})
+		b.Run("fasthttp/"+tt.name, func(b *testing.B) {
+			var a fasthttp.Args
+			b.ReportAllocs()
+			for b.Loop() {
+				a.Reset()
+				a.SetBytesKV(key1, val1)
+				a.SetBytesKV(key2, text)
+				a.SetBytesKV(key3, val3)
+				_ = a.QueryString()
+			}
+		})
+	}
 }
 
 func BenchmarkQueryEscape(b *testing.B) {
-	for _, tt := range []struct {
-		name string
-		src  string
-	}{{"plain", plain}, {"mixed", mixed}} {
+	for _, tt := range texts {
 		src := []byte(tt.src)
 		b.Run("gourl/"+tt.name, func(b *testing.B) {
 			buf := make([]byte, 0, 256)
@@ -188,10 +200,11 @@ func BenchmarkQueryEscape(b *testing.B) {
 }
 
 func BenchmarkQueryUnescape(b *testing.B) {
-	for _, tt := range []struct {
-		name string
-		src  string
-	}{{"plain", plain}, {"mixed", url.QueryEscape(mixed)}} {
+	for _, t := range texts {
+		tt := t
+		if tt.name != "plain" {
+			tt.src = url.QueryEscape(tt.src)
+		}
 		src := []byte(tt.src)
 		b.Run("gourl/"+tt.name, func(b *testing.B) {
 			buf := make([]byte, 0, 256)
