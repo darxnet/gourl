@@ -38,6 +38,15 @@ func TestParseQuery(t *testing.T) {
 		{"a=%zz&b=2", []string{"b", "2"}, url.EscapeError("%zz")},
 		{"%zz=1&b=%2", nil, url.EscapeError("%zz")},
 		{"a=1;b&c=%zz", []string{"a", "1;b"}[:0], gourl.ErrSemicolonSeparator},
+		// An escape cut short by "=", "&" or the end is reported as written
+		// in the key or the value, not across the separator.
+		{"a%2=b&c=1", []string{"c", "1"}, url.EscapeError("%2")},
+		{"a%=b", nil, url.EscapeError("%")},
+		{"a=%4&c=1", []string{"c", "1"}, url.EscapeError("%4")},
+		{"a=b%", nil, url.EscapeError("%")},
+		{"a=%41%2=c", nil, url.EscapeError("%2=")},
+		{"%zz=1;", nil, gourl.ErrSemicolonSeparator},
+		{"a=%41&%", []string{"a", "%41"}, url.EscapeError("%")},
 	}
 	for _, tt := range tests {
 		ps, err := gourl.ParseQuery(gourl.Params{{Key: []byte("x")}}[:0], []byte(tt.in))
