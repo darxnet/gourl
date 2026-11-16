@@ -140,6 +140,10 @@ The differences are deliberate and small:
 - **Host colons** follow `urlstrictcolons=1` (the default for modules at
   Go 1.26 or later): `http://host:1:2/` is an error, `postgres://a:1,b:2` is
   not. `net/url` in a module at an older Go version accepts both.
+- **`AppendTo` follows `URL.String` of Go 1.27**: a path that starts with
+  `//` after a scheme without an authority gets its first `/` escaped
+  (`file:%2F/host/p`), so that reparsing does not read `host` as the
+  authority. `URL.String` in Go 1.26 writes `file://host/p`.
 - `ParseQuery` has no parameter-count limit (`urlmaxqueryparams`).
 - `ParseRequestURI`, `ResolveReference`, `JoinPath`, `Redacted`, JSON and
   Gob encoding are not provided; `CopyToStd(&std)` fills a `url.URL` exactly
