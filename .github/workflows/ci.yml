@@ -19,8 +19,50 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest] # amd64, arm64
+        os: [ubuntu-latest, ubuntu-24.04-arm] # amd64, arm64
         go: [stable, oldstable]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version: ${{ matrix.go }}
+          cache: true
+
+      - name: Verify go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code -- go.mod go.sum
+
+      - name: Verify generated code
+        run: |
+          go generate ./...
+          git diff --exit-code
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: go test -race -failfast -count=1 ./...
+
+      - name: Benchmarks compile and run once
+        run: go test -run=NONE -bench=. -benchtime=1x ./...
+
+      - name: Comparison benchmarks compile and run once
+        if: matrix.go == 'stable'
+        run: go test -C benchmarks -run=NONE -bench=. -benchtime=1x ./...
+
+  # Not required by "CI passed": macOS runners are often short (jobs queue for
+  # minutes or are never picked up), and arm64 is covered by ubuntu-24.04-arm.
+  test-macos:
+    name: Test, non-blocking (Go ${{ matrix.go }}, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest] # arm64
+        go: [stable]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 15
     steps:
