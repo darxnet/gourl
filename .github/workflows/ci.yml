@@ -5,6 +5,10 @@ name: CI
 on:
   pull_request:
   workflow_call:
+    outputs:
+      passed:
+        description: '"true" when "CI passed" succeeded; non-blocking jobs may still have failed'
+        value: ${{ jobs.ok.outputs.passed }}
 
 permissions:
   contents: read
@@ -173,8 +177,11 @@ jobs:
     if: always()
     needs: [test, lint, vulncheck, coverage]
     runs-on: ubuntu-latest
+    outputs:
+      passed: ${{ steps.check.outputs.passed }}
     steps:
       - name: Check results
+        id: check
         env:
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
@@ -182,3 +189,4 @@ jobs:
           for r in $RESULTS; do
             [ "$r" = "success" ] || exit 1
           done
+          echo "passed=true" >> "$GITHUB_OUTPUT"

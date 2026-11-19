@@ -23,6 +23,10 @@ jobs:
   release:
     name: Release
     needs: ci
+    # "CI passed", not the whole CI: a failed non-blocking job (macOS,
+    # experimental servers) makes the called workflow fail and would skip
+    # the release.
+    if: ${{ !cancelled() && needs.ci.outputs.passed == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
