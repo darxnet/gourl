@@ -4,7 +4,7 @@ go 1.26.0
 
 require (
 	github.com/darxnet/gourl v0.0.0
-	github.com/valyala/fasthttp v1.79.0
+	github.com/valyala/fasthttp v1.80.0
 )
 
 require (
