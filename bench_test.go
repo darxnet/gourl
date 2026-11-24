@@ -13,6 +13,16 @@ var (
 	benchQuery = []byte("page=2&sort=name+asc&q=caf%C3%A9&filter=active&limit=50")
 	benchPlain = []byte("plain_text-only.42")
 	benchMixed = []byte("hello world & friends/café?")
+	// benchCyrillic and benchBinary escape almost every byte; benchSparse is
+	// text with a few escapes between words; benchToken is a long run with
+	// escapes only at its ends, as a signed token in a query.
+	benchCyrillic = []byte("Привіт, світе! Як справи?")
+	benchBinary   = []byte("\x00\x01\x02\x03\x7f\x80\x9f\xa0\xbf\xc0\xdf\xe0\xef\xf0\xfe\xff" +
+		"\x10\x1f &=%+#?/\\\"'<>[]{}|^`")
+	benchToken = []byte("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6Ikpv" +
+		"aG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ/SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c==")
+	benchSparse = []byte("The quick brown fox jumps over the lazy dog; " +
+		"pack my box with five dozen liquor jugs: café, naïve, résumé (2026).")
 )
 
 func BenchmarkParseInto(b *testing.B) {
@@ -78,11 +88,18 @@ func BenchmarkAppendQueryEscape(b *testing.B) {
 
 func BenchmarkAppendQueryUnescape(b *testing.B) {
 	buf := make([]byte, 0, 256)
-	escaped := gourl.AppendQueryEscape(nil, benchMixed)
 	for _, tt := range []struct {
 		name string
 		src  []byte
-	}{{"plain", benchPlain}, {"mixed", escaped}} {
+	}{
+		{"plain", benchPlain},
+		{"mixed", gourl.AppendQueryEscape(nil, benchMixed)},
+		{"cyrillic", gourl.AppendQueryEscape(nil, benchCyrillic)},
+		{"binary", gourl.AppendQueryEscape(nil, benchBinary)},
+		{"sparse", gourl.AppendQueryEscape(nil, benchSparse)},
+		{"sparse-path", gourl.AppendPathEscape(nil, benchSparse)},
+		{"token", gourl.AppendQueryEscape(nil, benchToken)},
+	} {
 		b.Run(tt.name, func(b *testing.B) {
 			b.ReportAllocs()
 			for b.Loop() {

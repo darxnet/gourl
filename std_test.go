@@ -464,6 +464,11 @@ var escapeInputs = []string{
 	"%1", "123%45%6", "%zzzzz", "a+b", "a%20b", "a/b", "abc+def",
 	" ?&=#+%!<>#\"{}|\\^[]`☺\t:/@$'()*,;", "Фотки собак", "%D0%A4+%D1%81",
 	"a%2Fb", "a%2fb", "a%25b", "%%", "%2", "%2%", "+", "++", "%2B", "\x00\x7f\x80\xff",
+	// Runs of eight and more bytes between escapes, which are copied whole,
+	// with an escape or "+" at each offset of the eight and at the end.
+	"%41abcdefgh%42", "%41abcdefghi", "%41abcdefg", "%41abcdefg%", "%41abcdefgh%4",
+	"%41a+bcdefgh", "%41abcdefg+", "%41abcdefgh+ijklmnop%2Bqrstuvw%zz",
+	"x%41+abcdefghijklmnopqrstuvwxyz0123456789%25%",
 }
 
 func TestEscapeVsStd(t *testing.T) {
@@ -537,5 +542,10 @@ func compareUnescape(t *testing.T, name, in string,
 	buf := []byte(in)
 	if got, err := fn(buf[:0], buf); err != nil || string(got) != want {
 		t.Errorf("%s(buf[:0], buf) for %q = %q, %v; want %q", name, in, got, err, want)
+	}
+	// Appended after what dst holds, with spare capacity after the output.
+	dst := append(make([]byte, 0, 2*len(in)+16), "pre"...)
+	if got, err := fn(dst, []byte(in)); err != nil || string(got) != "pre"+want {
+		t.Errorf("%s(\"pre\", %q) = %q, %v; want %q", name, in, got, err, "pre"+want)
 	}
 }

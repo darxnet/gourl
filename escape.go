@@ -5,6 +5,8 @@ package gourl
 
 import (
 	"bytes"
+	"encoding/binary"
+	"math/bits"
 	"net/url"
 	"slices"
 )
@@ -153,32 +155,90 @@ func AppendUnescape(dst, src []byte, mode Encoding) ([]byte, error) {
 	n := len(dst)
 	dst = slices.Grow(dst, len(src)-2*escapes)[:n+len(src)-2*escapes]
 	w := n + copy(dst[n:], src[:first])
-	for i := first; i < len(src); i++ {
-		switch c := src[i]; c {
-		case '%':
+	// Bytes between escapes are read eight at a time, up to the first "%"
+	// or "+" among them: one load and at most three stores per run, so
+	// short runs between escapes cost what a byte loop does and long ones
+	// much less.
+	for i := first; i < len(src); {
+		switch c := src[i]; {
+		case c == '%':
 			dst[w] = unhex(src[i+1])<<4 | unhex(src[i+2])
-			i += 2
-		case '+':
+			i += 3
+			w++
+		case c == '+':
 			dst[w] = plus
+			i++
+			w++
+		case len(src)-i >= 8 && len(dst)-w >= 8:
+			x := binary.LittleEndian.Uint64(src[i:])
+			k := bits.TrailingZeros64(zeroBytes(x^pcts)|zeroBytes(x^pluses)) / 8
+			storeLow(dst[w:], x, k)
+			i += k
+			w += k
 		default:
 			dst[w] = c
+			i++
+			w++
 		}
-		w++
 	}
 	return dst, nil
 }
 
+const (
+	lsbs   = 0x0101010101010101
+	msbs   = 0x8080808080808080
+	pcts   = lsbs * '%'
+	pluses = lsbs * '+'
+)
+
+// storeLow stores the low k bytes of x, k <= 8, at the start of dst: as
+// whole words where possible, and never past the k bytes, which may still
+// be unread input when decoding in place.
+//
+//nolint:gosec // the conversions keep the low bytes of x on purpose
+func storeLow(dst []byte, x uint64, k int) {
+	if k == 8 {
+		binary.LittleEndian.PutUint64(dst, x)
+		return
+	}
+	j := 0
+	if k&4 != 0 {
+		binary.LittleEndian.PutUint32(dst, uint32(x))
+		x >>= 32
+		j = 4
+	}
+	if k&2 != 0 {
+		binary.LittleEndian.PutUint16(dst[j:], uint16(x))
+		x >>= 16
+		j += 2
+	}
+	if k&1 != 0 {
+		dst[j] = byte(x)
+	}
+}
+
+// zeroBytes sets the top bit of the bytes of x from its first zero byte on
+// (counting from the low end): the top bit of the first zero byte is exact,
+// those above it may be false positives. 0 if x has no zero byte.
+func zeroBytes(x uint64) uint64 { return (x - lsbs) &^ x & msbs }
+
 // countEscapes validates the escapes of s, which starts at its first "%".
 func countEscapes(s []byte) (escapes int, err error) {
-	for i := 0; i < len(s); i++ {
+	for i := 0; i < len(s); {
 		if s[i] != '%' {
+			// Skip to the next "%" eight bytes at a time.
+			if len(s)-i >= 8 {
+				i += bits.TrailingZeros64(zeroBytes(binary.LittleEndian.Uint64(s[i:])^pcts)) / 8
+			} else {
+				i++
+			}
 			continue
 		}
 		if i+2 >= len(s) || !ishex(s[i+1]) || !ishex(s[i+2]) {
 			return 0, escapeError(s[i:])
 		}
 		escapes++
-		i += 2
+		i += 3
 	}
 	return escapes, nil
 }
