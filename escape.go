@@ -225,20 +225,20 @@ func zeroBytes(x uint64) uint64 { return (x - lsbs) &^ x & msbs }
 // countEscapes validates the escapes of s, which starts at its first "%".
 func countEscapes(s []byte) (escapes int, err error) {
 	for i := 0; i < len(s); {
-		if s[i] != '%' {
-			// Skip to the next "%" eight bytes at a time.
-			if len(s)-i >= 8 {
-				i += bits.TrailingZeros64(zeroBytes(binary.LittleEndian.Uint64(s[i:])^pcts)) / 8
-			} else {
-				i++
+		if s[i] == '%' {
+			if i+2 >= len(s) || !ishex(s[i+1]) || !ishex(s[i+2]) {
+				return 0, escapeError(s[i:])
 			}
+			escapes++
+			i += 3
 			continue
 		}
-		if i+2 >= len(s) || !ishex(s[i+1]) || !ishex(s[i+2]) {
-			return 0, escapeError(s[i:])
+		// Skip to the next "%" eight bytes at a time.
+		if len(s)-i >= 8 {
+			i += bits.TrailingZeros64(zeroBytes(binary.LittleEndian.Uint64(s[i:])^pcts)) / 8
+		} else {
+			i++
 		}
-		escapes++
-		i += 3
 	}
 	return escapes, nil
 }
