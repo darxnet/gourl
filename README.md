@@ -171,31 +171,37 @@ comparison lives in the [benchmarks](benchmarks) module; run it with
 
 | Operation | `gourl` | `net/url` | `fasthttp` |
 |---|---|---|---|
-| Parse a URL | **109 ns**, 0 allocs | 217 ns, 2 allocs | 99 ns, 0 allocs |
-| Assemble (`String`) | **58 ns**, 0 allocs | 78 ns, 2 allocs | 23 ns, 0 allocs |
-| Request URI | **22 ns**, 0 allocs | 28 ns, 1 alloc | 11 ns, 0 allocs |
-| Parse a query (5 pairs) | **80 ns**, 0 allocs | 283 ns, 7 allocs | 91 ns, 0 allocs |
-| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 268 ns, 9 allocs | 91 ns, 0 allocs |
-| Build a query (3 pairs), Cyrillic | **77 ns**, 0 allocs | 347 ns, 10 allocs | 102 ns, 0 allocs |
-| Build a query (3 pairs), binary | **72 ns**, 0 allocs | 320 ns, 10 allocs | 93 ns, 0 allocs |
+| Parse a URL | **84 ns**, 0 allocs | 214 ns, 2 allocs | 99 ns, 0 allocs |
+| Assemble (`String`) | **59 ns**, 0 allocs | 80 ns, 2 allocs | 23 ns, 0 allocs |
+| Request URI | **22 ns**, 0 allocs | 29 ns, 1 alloc | 12 ns, 0 allocs |
+| Parse a query (5 pairs) | **80 ns**, 0 allocs | 282 ns, 7 allocs | 92 ns, 0 allocs |
+| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 268 ns, 9 allocs | 88 ns, 0 allocs |
+| Build a query (3 pairs), Cyrillic | **76 ns**, 0 allocs | 331 ns, 10 allocs | 101 ns, 0 allocs |
+| Build a query (3 pairs), binary | **71 ns**, 0 allocs | 320 ns, 10 allocs | 95 ns, 0 allocs |
 | Query escape, plain | **8 ns**, 0 allocs | 7 ns, 0 allocs | 8 ns, 0 allocs |
-| Query escape, mixed | **30 ns**, 0 allocs | 54 ns, 1 alloc | 32 ns, 0 allocs |
-| Query escape, Cyrillic | **43 ns**, 0 allocs | 106 ns, 2 allocs | 41 ns, 0 allocs |
-| Query escape, binary | **38 ns**, 0 allocs | 93 ns, 2 allocs | 37 ns, 0 allocs |
+| Query escape, mixed | **31 ns**, 0 allocs | 56 ns, 1 alloc | 32 ns, 0 allocs |
+| Query escape, Cyrillic | **44 ns**, 0 allocs | 110 ns, 2 allocs | 42 ns, 0 allocs |
+| Query escape, binary | **38 ns**, 0 allocs | 96 ns, 2 allocs | 37 ns, 0 allocs |
 | Query unescape, plain | **6 ns**, 0 allocs | 21 ns, 0 allocs | 6 ns, 0 allocs |
-| Query unescape, mixed | **43 ns**, 0 allocs | 92 ns, 1 alloc | 38 ns, 0 allocs |
-| Query unescape, Cyrillic | **89 ns**, 0 allocs | 146 ns, 1 alloc | 62 ns, 0 allocs |
-| Query unescape, binary | **80 ns**, 0 allocs | 127 ns, 1 alloc | 53 ns, 0 allocs |
+| Query unescape, mixed | **36 ns**, 0 allocs | 91 ns, 1 alloc | 38 ns, 0 allocs |
+| Query unescape, Cyrillic | **89 ns**, 0 allocs | 143 ns, 1 alloc | 62 ns, 0 allocs |
+| Query unescape, binary | **80 ns**, 0 allocs | 128 ns, 1 alloc | 53 ns, 0 allocs |
 
-`fasthttp` is faster at parsing URLs, assembling and unescaping because it
-does not validate or normalize: `fasthttp.URI` has its own rules and accepts
-what `net/url` rejects, and its unescaping never fails (a malformed `%zz` is
-copied as is), so it decodes in one pass. `gourl` checks every escape first
-and decodes in a second pass, so that a malformed escape returns an error
-with the input untouched, also when decoding in place; `net/url` allocates
-a new string and has no such concern. `gourl` still comes in ahead of
-`net/url` on every operation with no allocations; the one tie is escaping
-plain text, where `net/url` returns its input unchanged.
+`fasthttp` is faster at assembling and at unescaping text where nearly every
+byte is escaped because it does not validate or normalize: `fasthttp.URI`
+has its own rules and accepts what `net/url` rejects, and its unescaping
+never fails (a malformed `%zz` is copied as is), so it decodes in one pass.
+`gourl` checks every escape first and decodes in a second pass, so that a
+malformed escape returns an error with the input untouched, also when
+decoding in place; `net/url` allocates a new string and has no such
+concern. Parsing a URL, `gourl` comes in ahead of `fasthttp` while still
+validating: it finds the fragment and any control byte in one pass, eight
+bytes at a time. An authority that is just a host name and an optional
+port is split and checked in one more pass, so a URL like
+`https://www.example.com/api/v1/items/42?page=2&sort=name` parses in about
+29 ns.
+`gourl` is ahead of `net/url` on every operation with no allocations; the
+one tie is escaping plain text, where `net/url` returns its input unchanged.
 
 ## License
 
