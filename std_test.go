@@ -259,6 +259,16 @@ var parseInputs = []string{
 	"a:b//c",
 	"a:/b//c",
 	"a://b//c",
+	// The edges of the one-pass authority: a host name with an optional
+	// port, ended by "/" or by the end; anything else is parsed in full.
+	"http://h:", "http://h:/", "http://h:8080", "http://h:8080/p", "http://h:80x/",
+	"http://h:80:90/", "postgres://h1:5432,h2:5433/db", "http://h_1.ex~ample.com!$&'()*+,;=/",
+	"http://h:80?q", "http://h?q", "http://h#f", "http://h:80#f", "http://ex%41.com/",
+	"http://xn--80ak6aa92e.com/", "http://пример.рф/", "http://h<>/", "http://h\"/",
+	"http://[::1]/", "http://u@h/", "http://:80/", "http:///p",
+	// Control bytes and "#" in each position of an eight-byte word.
+	"http://h/\x01", "http://h/abc\x7f#", "http://h/abcde#\x01", "\x1f#",
+	"http://h/abcdefgh#\x7f", "http://h/abcdefg\x00", "#\x00", "a#b#c",
 }
 
 func TestParseVsStd(t *testing.T) {

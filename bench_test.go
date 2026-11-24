@@ -9,10 +9,12 @@ import (
 
 // The comparison with net/url and fasthttp lives in the benchmarks module.
 var (
-	benchURL   = []byte("https://user:pass@www.example.com:8443/api/v1/items/42?page=2&sort=name+asc&q=caf%C3%A9#section")
-	benchQuery = []byte("page=2&sort=name+asc&q=caf%C3%A9&filter=active&limit=50")
-	benchPlain = []byte("plain_text-only.42")
-	benchMixed = []byte("hello world & friends/café?")
+	benchURL = []byte("https://user:pass@www.example.com:8443/api/v1/items/42?page=2&sort=name+asc&q=caf%C3%A9#section")
+
+	benchCanonical = []byte("https://www.example.com/api/v1/items/42?page=2&sort=name")
+	benchQuery     = []byte("page=2&sort=name+asc&q=caf%C3%A9&filter=active&limit=50")
+	benchPlain     = []byte("plain_text-only.42")
+	benchMixed     = []byte("hello world & friends/café?")
 	// benchCyrillic and benchBinary escape almost every byte; benchSparse is
 	// text with a few escapes between words; benchToken is a long run with
 	// escapes only at its ends, as a signed token in a query.
@@ -30,6 +32,16 @@ func BenchmarkParseInto(b *testing.B) {
 	b.ReportAllocs()
 	for b.Loop() {
 		_ = gourl.ParseInto(&u, benchURL)
+	}
+}
+
+// BenchmarkParseIntoCanonical parses a URL of the most common shape: http or
+// https, a host name, a path and a query, nothing escaped.
+func BenchmarkParseIntoCanonical(b *testing.B) {
+	var u gourl.URL
+	b.ReportAllocs()
+	for b.Loop() {
+		_ = gourl.ParseInto(&u, benchCanonical)
 	}
 }
 
