@@ -27,7 +27,9 @@ package gourl
 
 import (
 	"bytes"
+	"encoding/binary"
 	"errors"
+	"math/bits"
 	"net/url"
 	"strings"
 )
@@ -362,9 +364,16 @@ func firstSegmentHasColon(path []byte) bool {
 // unspecified state.
 func ParseInto(u *URL, buf []byte) error {
 	*u = URL{}
-	rest, frag, hasFrag := cutByte(buf, '#')
-	if containsCTLByte(rest) {
+	// The fragment is cut off first; only what precedes it is checked for
+	// control bytes, and both are found in one pass.
+	end := fragmentOrCTL(buf)
+	if end < len(buf) && buf[end] != '#' {
 		return ErrControlCharacter
+	}
+	rest, hasFrag := buf[:end], end < len(buf)
+	var frag []byte
+	if hasFrag {
+		frag = buf[end+1:]
 	}
 	if len(rest) == 1 && rest[0] == '*' {
 		u.RawPath = rest
@@ -411,11 +420,20 @@ func (u *URL) parse(rest []byte) error {
 	if bytes.HasPrefix(rest, []byte("//")) && (len(u.Scheme) > 0 || !bytes.HasPrefix(rest, []byte("///"))) {
 		authority := rest[2:]
 		rest = nil
-		if i := bytes.IndexByte(authority, '/'); i >= 0 {
-			authority, rest = authority[:i], authority[i:]
-		}
-		if err := u.parseAuthority(authority); err != nil {
-			return err
+		if n := plainAuthorityLen(authority); n >= 0 {
+			// The common case, a host name with an optional port, is
+			// split and validated in one pass.
+			u.Host = authority[:n]
+			if n < len(authority) {
+				rest = authority[n:]
+			}
+		} else {
+			if i := bytes.IndexByte(authority, '/'); i >= 0 {
+				authority, rest = authority[:i], authority[i:]
+			}
+			if err := u.parseAuthority(authority); err != nil {
+				return err
+			}
 		}
 	} else if len(u.Scheme) > 0 && len(rest) > 0 && rest[0] == '/' {
 		// "file:/path": a scheme with an empty authority that was not
@@ -480,6 +498,36 @@ func (u *URL) parseAuthority(authority []byte) error {
 	}
 	u.User = Userinfo{username: username, password: password, passwordSet: hasPassword}
 	return nil
+}
+
+// plainHost marks the bytes that a host name may have as they are and that
+// have no other role in an authority: what EncodeHost keeps but "[", "]",
+// ":" and "@", and the non-ASCII bytes.
+var plainHost = func() (t [256]bool) {
+	for c := range t {
+		t[c] = c >= 0x80 || !shouldEscape(byte(c), EncodeHost) && !strings.ContainsRune("[]:@", rune(c))
+	}
+	return t
+}()
+
+// plainAuthorityLen returns the length of the authority at the start of s,
+// which ends at the first "/" or at the end of s, if it is a host name with
+// an optional port and nothing else: no userinfo, no IP literal, no escapes.
+// Such an authority is valid. Otherwise it returns -1, and parseAuthority
+// has to look at it.
+func plainAuthorityLen(s []byte) int {
+	i := 0
+	for i < len(s) && plainHost[s[i]] {
+		i++
+	}
+	if i < len(s) && s[i] == ':' {
+		for i++; i < len(s) && '0' <= s[i] && s[i] <= '9'; i++ {
+		}
+	}
+	if i < len(s) && s[i] != '/' {
+		return -1
+	}
+	return i
 }
 
 // checkHost validates a host[:port] or [IPv6]:port as net/url's parseHost
@@ -680,13 +728,25 @@ func validIPv4(s []byte) bool {
 	return dots == 3
 }
 
-func containsCTLByte(s []byte) bool {
-	for _, c := range s {
-		if c < ' ' || c == 0x7f {
-			return true
+// fragmentOrCTL returns the index of the first "#" or ASCII control byte
+// (below " ", or DEL) in s, or len(s). It reads eight bytes at a time, as it
+// runs over the whole URL.
+func fragmentOrCTL(s []byte) int {
+	i := 0
+	for ; len(s)-i >= 8; i += 8 {
+		x := binary.LittleEndian.Uint64(s[i:])
+		// (x - lsbs*n) &^ x & msbs marks the bytes of x below n, n <= 0x80;
+		// like zeroBytes, it is exact up to the first one marked.
+		if m := (x-lsbs*' ')&^x&msbs | zeroBytes(x^lsbs*0x7f) | zeroBytes(x^lsbs*'#'); m != 0 {
+			return i + bits.TrailingZeros64(m)/8
 		}
 	}
-	return false
+	for ; i < len(s); i++ {
+		if c := s[i]; c < ' ' || c == 0x7f || c == '#' {
+			return i
+		}
+	}
+	return i
 }
 
 // cutByte splits s around the first instance of sep.
