@@ -163,7 +163,7 @@ The differences are deliberate and small:
 
 ## Benchmarks
 
-`gourl` against `net/url` and `fasthttp` v1.79.0 on the same inputs (Apple
+`gourl` against `net/url` and `fasthttp` v1.80.0 on the same inputs (Apple
 M3 Pro, Go 1.27.2). The escaping inputs go from cheap to expensive: plain
 ASCII, mixed text, Cyrillic (every letter escaped) and binary data. The
 comparison lives in the [benchmarks](benchmarks) module; run it with
@@ -171,21 +171,21 @@ comparison lives in the [benchmarks](benchmarks) module; run it with
 
 | Operation | `gourl` | `net/url` | `fasthttp` |
 |---|---|---|---|
-| Parse a URL | **84 ns**, 0 allocs | 214 ns, 2 allocs | 99 ns, 0 allocs |
-| Assemble (`String`) | **59 ns**, 0 allocs | 80 ns, 2 allocs | 23 ns, 0 allocs |
-| Request URI | **22 ns**, 0 allocs | 29 ns, 1 alloc | 12 ns, 0 allocs |
-| Parse a query (5 pairs) | **80 ns**, 0 allocs | 282 ns, 7 allocs | 92 ns, 0 allocs |
-| Build a query (3 pairs), mixed | **62 ns**, 0 allocs | 268 ns, 9 allocs | 88 ns, 0 allocs |
-| Build a query (3 pairs), Cyrillic | **76 ns**, 0 allocs | 331 ns, 10 allocs | 101 ns, 0 allocs |
-| Build a query (3 pairs), binary | **71 ns**, 0 allocs | 320 ns, 10 allocs | 95 ns, 0 allocs |
+| Parse a URL | **86 ns**, 0 allocs | 218 ns, 2 allocs | 100 ns, 0 allocs |
+| Assemble (`String`) | **58 ns**, 0 allocs | 78 ns, 2 allocs | 25 ns, 0 allocs |
+| Request URI | **22 ns**, 0 allocs | 28 ns, 1 alloc | 12 ns, 0 allocs |
+| Parse a query (5 pairs) | **79 ns**, 0 allocs | 274 ns, 7 allocs | 89 ns, 0 allocs |
+| Build a query (3 pairs), mixed | **61 ns**, 0 allocs | 264 ns, 9 allocs | 88 ns, 0 allocs |
+| Build a query (3 pairs), Cyrillic | **75 ns**, 0 allocs | 328 ns, 10 allocs | 98 ns, 0 allocs |
+| Build a query (3 pairs), binary | **70 ns**, 0 allocs | 307 ns, 10 allocs | 92 ns, 0 allocs |
 | Query escape, plain | **8 ns**, 0 allocs | 7 ns, 0 allocs | 8 ns, 0 allocs |
-| Query escape, mixed | **31 ns**, 0 allocs | 56 ns, 1 alloc | 32 ns, 0 allocs |
-| Query escape, Cyrillic | **44 ns**, 0 allocs | 110 ns, 2 allocs | 42 ns, 0 allocs |
-| Query escape, binary | **38 ns**, 0 allocs | 96 ns, 2 allocs | 37 ns, 0 allocs |
-| Query unescape, plain | **6 ns**, 0 allocs | 21 ns, 0 allocs | 6 ns, 0 allocs |
-| Query unescape, mixed | **36 ns**, 0 allocs | 91 ns, 1 alloc | 38 ns, 0 allocs |
-| Query unescape, Cyrillic | **89 ns**, 0 allocs | 143 ns, 1 alloc | 62 ns, 0 allocs |
-| Query unescape, binary | **80 ns**, 0 allocs | 128 ns, 1 alloc | 53 ns, 0 allocs |
+| Query escape, mixed | **30 ns**, 0 allocs | 52 ns, 1 alloc | 31 ns, 0 allocs |
+| Query escape, Cyrillic | **43 ns**, 0 allocs | 103 ns, 2 allocs | 41 ns, 0 allocs |
+| Query escape, binary | **37 ns**, 0 allocs | 91 ns, 2 allocs | 36 ns, 0 allocs |
+| Query unescape, plain | **7 ns**, 0 allocs | 20 ns, 0 allocs | 7 ns, 0 allocs |
+| Query unescape, mixed | **35 ns**, 0 allocs | 86 ns, 1 alloc | 36 ns, 0 allocs |
+| Query unescape, Cyrillic | **88 ns**, 0 allocs | 140 ns, 1 alloc | 61 ns, 0 allocs |
+| Query unescape, binary | **79 ns**, 0 allocs | 121 ns, 1 alloc | 52 ns, 0 allocs |
 
 `fasthttp` is faster at assembling and at unescaping text where nearly every
 byte is escaped because it does not validate or normalize: `fasthttp.URI`
